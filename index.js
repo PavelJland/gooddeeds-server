@@ -3,17 +3,13 @@ const app = express();
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
+var path    = require("path");
 const md5 = require('md5');
 
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: false })); 
 
 mongoose.connect('mongodb://localhost/gb');
-
-var Test = mongoose.model('Test', new Schema({ name: String }));
-
-var first = new Test({ name: 'onStart' });
-first.save();
 
 var userSchema = new Schema({
   name: String,
@@ -25,6 +21,7 @@ var userSchema = new Schema({
 var deedSchema = new Schema({
   pos: {type: [Number], index: '2dsphere'},
   photo: String,
+  photoAfter: String,
   name: String,
   description: String,
   created_at: Number,
@@ -38,9 +35,15 @@ var User = mongoose.model('User', userSchema);
 module.exports = User;
 module.exports = Deed;
 
+app.use(express.static('public'));
+
 
 app.get('/', function(req,res) {
-  res.send("Карта добрых дел")
+  if (req.query.lang == 'ru') {
+    res.sendFile(path.join(__dirname+'/public/ru-index.html'));
+    return;
+  }
+  res.sendFile(path.join(__dirname+'/public/en-index.html'));
 })
 app.get('/ping', function (req, res) {
   res.json({ping: 'pong'});
@@ -120,24 +123,49 @@ app.post('/deed', function (req, res) {
     })
 });
 
+app.get('/deed/:id', function(req, res) {
+  var center = [56.3225259, 44.0075022];
+  var max = 5000000;
+  var query = req.query;
+  var squery = {}
+  console.log(req.params)
+  if (!!req.params.id) {
+    console.log(req.params.id)
+    Deed.findOne({_id: req.params.id}, function(err,deed) {
+      if(err){return;} else {
+            var outputDeed = {
+            pos: {lat: deed.pos[0], lon: deed.pos[1]},
+            photo: deed.photo,
+            name: deed.name,
+            description: deed.description,
+            created_at: deed.created_at,
+            status: deed.status
+          }
+        res.json(outputDeed)
+      }
+    })
+  }
+})
+
+
 app.get('/deed', function(req, res) {
   var center = [56.3225259, 44.0075022];
   var max = 5000000;
-  var params = req.query;
+  var query = req.query;
   var squery = {}
-  if (params.status) {
-    squery.status = params.status;
+  if (query.status) {
+    squery.status = query.status;
     console.log(squery)
     res.send(squery)
   }
-  if (params.radius) {
-    var radius = params.radius;
+  if (query.radius) {
+    var radius = query.radius;
     max = radius;
   }
-  if (params.lat && params.lon) {
-    var lat = params.lat;
-    var lon = params.lon;
-    center = [params.lat, params.lon];
+  if (query.lat && query.lon) {
+    var lat = query.lat;
+    var lon = query.lon;
+    center = [query.lat, query.lon];
   }
 
   squery.pos = {
@@ -169,6 +197,10 @@ app.get('/deed', function(req, res) {
       
     res.json(deedsMap);  
     })
+})
+
+app.post("/freepost", function(req,res) {
+  console.log(req.body)
 })
 
 // Версия с токеном
@@ -207,10 +239,13 @@ app.put('/deed/:id', function(req, res) {
   //var token = req.query.token;
   var id = req.params.id;
   var data = req.body;
-  console.log(id, body);
-  Deed.findByIdAndUpdate(id, { "$set": body}, { new: true }, function (err, deed) {
-  if (err) return handleError(err);
-    res.send(deed);
+  data.pos = [data.pos.lat, data.pos.lon]
+  console.log(id, data);
+
+
+   Deed.findByIdAndUpdate(id, { "$set": data}, { new: true }, function (err, deed) {
+  if (err) {console.log(err)} ;
+     res.send(deed);
   });
 });
 
